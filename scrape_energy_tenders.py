@@ -35,14 +35,15 @@ OUTPUT_JSON = Path(__file__).parent / "tenders_data.json"
 OUTPUT_HTML = Path(__file__).parent / "energy-ministry-tenders.html"
 
 
-async def fetch_active_tenders():
-    """يفتح اعتماد، يطبّق الفلاتر، ويرجّع قائمة المنافسات (بدون فلترة التاريخ بعد)."""
+async def _try_fetch_once(attempt: int):
+    """محاولة واحدة لفتح اعتماد وتطبيق الفلاتر. ترجع قائمة نصوص البطاقات أو ترفع استثناء."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
-        await page.goto(BASE_URL, wait_until="domcontentloaded")
-        await page.wait_for_timeout(6000)  # الموقع بطيء أحيانًا، ننتظر تحميله كامل
+        # سيرفرات GitHub Actions أبطأ أحيانًا من جهاز شخصي، فنعطي وقت أطول بكثير
+        await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(10000)  # انتظار تحميل كامل للصفحة (JS + بيانات)
 
         # 1) توسيع قسم "البحث المتقدم"
         await page.evaluate(
@@ -51,7 +52,7 @@ async def fetch_active_tenders():
                 if (a) a.click();
             }"""
         )
-        await page.wait_for_timeout(500)
+        await page.wait_for_timeout(1000)
 
         # 2) فتح قائمة "الجهة الحكوميه" لإجبار الموقع على تحميل الأسماء الحقيقية
         await page.evaluate(
@@ -60,14 +61,29 @@ async def fetch_active_tenders():
                 if (btn) btn.click();
             }"""
         )
-        # ننتظر حتى يتحمّل عدد كبير من الخيارات (حوالي 1800 جهة)
-        try:
-            await page.wait_for_function(
-                "document.getElementById('agency') && document.getElementById('agency').options.length > 100",
-                timeout=8000,
+        # ننتظر حتى يتحمّل عدد كبير من الخيارات (حوالي 1800 جهة) - وقت أطول ومحاولات متكررة
+        options_loaded = False
+        for _ in range(6):  # حتى 6 محاولات * 5 ثوانٍ = 30 ثانية انتظار كحد أقصى
+            count = await page.evaluate(
+                "document.getElementById('agency') ? document.getElementById('agency').options.length : 0"
             )
-        except Exception:
-            pass  # نكمل بأي حال، سنتحقق لاحقًا
+            if count and count > 100:
+                options_loaded = True
+                break
+            await page.wait_for_timeout(5000)
+            # لو ما زالت ما تحمّلت، جرّب فتح القائمة مرة ثانية
+            await page.evaluate(
+                """() => {
+                    const btn = document.querySelector('button[data-id="agency"]');
+                    if (btn) btn.click();
+                }"""
+            )
+
+        if not options_loaded:
+            await browser.close()
+            raise RuntimeError(
+                f"[محاولة {attempt}] قائمة الجهات الحكومية ما تحمّلت خلال 30 ثانية."
+            )
 
         # 3) تعيين القيم عبر JavaScript مباشرة (نفس الطريقة التي أثبتت نجاحها)
         result = await page.evaluate(
@@ -91,7 +107,7 @@ async def fetch_active_tenders():
         if result.get("agency") != AGENCY_CODE:
             await browser.close()
             raise RuntimeError(
-                "فشل تعيين فلتر الجهة الحكومية - قد تكون قائمة الجهات ما تحمّلت. جرّب تشغيل السكربت مرة ثانية."
+                f"[محاولة {attempt}] فشل تعيين فلتر الجهة الحكومية رغم تحميل القائمة (agency={result.get('agency')})."
             )
 
         # 4) الضغط على زر البحث الفعلي
@@ -103,7 +119,7 @@ async def fetch_active_tenders():
                 if (submitBtn) submitBtn.click();
             }"""
         )
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(5000)
 
         # 5) استخراج بطاقات المنافسات من الصفحة
         cards_text = await page.evaluate(
@@ -129,6 +145,20 @@ async def fetch_active_tenders():
 
         await browser.close()
         return cards_text
+
+
+async def fetch_active_tenders():
+    """يحاول فتح اعتماد وتطبيق الفلاتر، ويعيد المحاولة تلقائيًا (حتى 3 مرات) لو فشلت المرة الأولى."""
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            return await _try_fetch_once(attempt)
+        except Exception as e:
+            last_error = e
+            print(f"المحاولة {attempt} فشلت: {e}")
+            if attempt < 3:
+                await asyncio.sleep(5)
+    raise last_error
 
 
 def extract_fields(text: str) -> dict:
