@@ -1,0 +1,40 @@
+# هذا الملف لازم يُرفع داخل مجلد اسمه بالضبط: .github/workflows/
+# داخل نفس مستودع GitHub اللي فيه scrape_energy_tenders.py و requirements.txt
+#
+# وظيفته: يشغّل السكربت تلقائيًا كل ساعة على خوادم GitHub (مجانًا)
+# ويحفظ النتائج (energy-ministry-tenders.html) داخل المستودع نفسه.
+
+name: فحص منافسات وزارة الطاقة كل ساعة
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # كل ساعة (بتوقيت UTC)
+  workflow_dispatch: {}     # يسمح بتشغيله يدويًا من واجهة GitHub لتجربته
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: تحميل الكود من المستودع
+        uses: actions/checkout@v4
+
+      - name: تثبيت Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: تثبيت المكتبات المطلوبة
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: تشغيل سكربت الفحص
+        run: python scrape_energy_tenders.py
+
+      - name: حفظ النتائج داخل المستودع
+        run: |
+          git config user.name "auto-bot"
+          git config user.email "auto-bot@users.noreply.github.com"
+          git add energy-ministry-tenders.html tenders_data.json
+          git commit -m "تحديث تلقائي لمنافسات وزارة الطاقة" || echo "لا يوجد تغيير"
+          git push
