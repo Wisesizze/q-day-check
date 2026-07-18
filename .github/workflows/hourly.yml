@@ -1,19 +1,31 @@
 # هذا الملف لازم يُرفع داخل مجلد اسمه بالضبط: .github/workflows/
 # داخل نفس مستودع GitHub اللي فيه scrape_energy_tenders.py و requirements.txt
 #
-# وظيفته: يشغّل السكربت تلقائيًا كل ساعة على خوادم GitHub (مجانًا)
+# وظيفته: يشغّل السكربت تلقائيًا كل 6 ساعات على خوادم GitHub (مجانًا)
 # ويحفظ النتائج (energy-ministry-tenders.html) داخل المستودع نفسه.
+#
+# قبل ما يشتغل بنجاح، لازم تضيف 3 "Secrets" في إعدادات المستودع
+# (Settings > Secrets and variables > Actions > New repository secret):
+#   PROXY_SERVER    مثال: http://gate.dataimpulse.com:823
+#   PROXY_USERNAME   اسم المستخدم اللي أعطتك إياه DataImpulse
+#   PROXY_PASSWORD   كلمة المرور اللي أعطتك إياها DataImpulse
+# لو تركتها فاضية، السكربت يشتغل بدون بروكسي (وبيرجع يفشل بسبب حظر اعتماد
+# لعناوين GitHub، زي ما شفنا في أول تجربة).
 
-name: فحص منافسات وزارة الطاقة كل ساعة
+name: فحص منافسات وزارة الطاقة كل 6 ساعات
 
 on:
   schedule:
-    - cron: "0 * * * *"   # كل ساعة (بتوقيت UTC)
-  workflow_dispatch: {}     # يسمح بتشغيله يدويًا من واجهة GitHub لتجربته
+    - cron: "0 */6 * * *"   # كل 6 ساعات (بتوقيت UTC)
+  workflow_dispatch: {}       # يسمح بتشغيله يدويًا من واجهة GitHub لتجربته
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    env:
+      PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+      PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+      PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
     steps:
       - name: تحميل الكود من المستودع
         uses: actions/checkout@v4
