@@ -61,6 +61,8 @@ SEARCH_URL = (
 )
 OUTPUT_JSON = Path(__file__).parent / "tenders_data.json"
 OUTPUT_HTML = Path(__file__).parent / "energy-ministry-tenders.html"
+# نفس الصفحة باسم index.html حتى يفتحها رابط الموقع مباشرة (GitHub Pages)
+OUTPUT_INDEX = Path(__file__).parent / "index.html"
 
 # -------- إعدادات البروكسي (اختيارية) --------
 # ما تكتب بيانات البروكسي هنا أبدًا. السكربت يقرأها من متغيرات البيئة
@@ -374,7 +376,9 @@ async def main():
         json.dumps({"updated": today_str, "tenders": active}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    OUTPUT_HTML.write_text(build_html(active, today_str), encoding="utf-8")
+    html = build_html(active, today_str)
+    OUTPUT_HTML.write_text(html, encoding="utf-8")
+    OUTPUT_INDEX.write_text(html, encoding="utf-8")  # نسخة للموقع العام
 
     print(f"تم العثور على {len(active)} منافسة متاحة لوزارة الطاقة بتاريخ {today_str}")
 
