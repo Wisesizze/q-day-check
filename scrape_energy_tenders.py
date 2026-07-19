@@ -32,6 +32,33 @@ from playwright.async_api import async_playwright
 # -------- إعدادات ثابتة --------
 BASE_URL = "https://tenders.etimad.sa/Tender/AllTendersForVisitor?PageNumber=1"
 AGENCY_CODE = "029001000000"  # الكود الدقيق لـ "وزارة الطاقة" (وليس فروعها)
+
+# رابط البحث المفلتر مباشرة على وزارة الطاقة.
+# هذي هي نفس معاملات الرابط التي ينتجها الموقع عند الفلترة يدويًا،
+# فنستخدمها مباشرة بدل التعامل مع القائمة المنسدلة التي لا تتحمّل آليًا.
+SEARCH_URL = (
+    "https://tenders.etimad.sa/Tender/AllTendersForVisitor"
+    "?MultipleSearch="
+    "&TenderCategory=0"
+    "&ReferenceNumber="
+    "&TenderNumber="
+    f"&agency={AGENCY_CODE}"
+    "&ConditionaBookletRange="
+    "&PublishDateId=5"
+    "&LastOfferPresentationDate="
+    "&TenderAreasIdString="
+    "&TenderTypeId="
+    "&TenderActivityId="
+    "&TenderSubActivityId="
+    f"&AgencyCode={AGENCY_CODE}"
+    "&FromLastOfferPresentationDateString="
+    "&ToLastOfferPresentationDateString="
+    "&SortDirection=DESC"
+    "&Sort=SubmitionDate"
+    "&PageSize=24"
+    "&IsSearch=true"
+    "&PageNumber=1"
+)
 OUTPUT_JSON = Path(__file__).parent / "tenders_data.json"
 OUTPUT_HTML = Path(__file__).parent / "energy-ministry-tenders.html"
 
@@ -131,54 +158,35 @@ async def _try_fetch_once(attempt: int):
         await context.add_init_script(STEALTH_SCRIPT)
         page = await context.new_page()
 
-        # سيرفرات GitHub Actions أبطأ أحيانًا من جهاز شخصي، فنعطي وقت أطول بكثير
-        await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(10000)  # انتظار تحميل كامل للصفحة (JS + بيانات)
+        # نذهب مباشرة إلى رابط البحث المفلتر على "وزارة الطاقة".
+        # هذا يتجاوز تمامًا مشكلة قائمة الجهات المنسدلة (التي لا تتحمّل في البيئة الآلية)،
+        # لأن الفلاتر كلها تنعكس في معاملات الرابط نفسه.
+        print(f"[محاولة {attempt}] فتح الرابط المفلتر مباشرة...")
+        await page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(12000)  # انتظار تحميل النتائج (JS + بيانات)
 
-        # 1) توسيع قسم "البحث المتقدم"
-        await page.evaluate(
-            """() => {
-                const a = document.querySelector('a.search-expand[href="#dates"]');
-                if (a) a.click();
-            }"""
-        )
-        await page.wait_for_timeout(1000)
-
-        # 2) فتح قائمة "الجهة الحكوميه" لإجبار الموقع على تحميل الأسماء الحقيقية
-        await page.evaluate(
-            """() => {
-                const btn = document.querySelector('button[data-id="agency"]');
-                if (btn) btn.click();
-            }"""
-        )
-        # ننتظر حتى يتحمّل عدد كبير من الخيارات (حوالي 1800 جهة) - وقت أطول ومحاولات متكررة
-        options_loaded = False
-        for _ in range(6):  # حتى 6 محاولات * 5 ثوانٍ = 30 ثانية انتظار كحد أقصى
+        # التحقق من أن النتائج ظهرت فعلاً (نبحث عن بطاقات المنافسات)
+        results_loaded = False
+        for _ in range(6):  # حتى 30 ثانية انتظار إضافي
             count = await page.evaluate(
-                "document.getElementById('agency') ? document.getElementById('agency').options.length : 0"
+                """() => Array.from(document.querySelectorAll('*'))
+                    .filter(e => e.children.length === 0 && e.textContent.trim() === 'الرقم المرجعي').length"""
             )
-            if count and count > 100:
-                options_loaded = True
+            if count and count > 0:
+                results_loaded = True
+                print(f"[محاولة {attempt}] تم العثور على {count} بطاقة منافسة.")
                 break
             await page.wait_for_timeout(5000)
-            # لو ما زالت ما تحمّلت، جرّب فتح القائمة مرة ثانية
-            await page.evaluate(
-                """() => {
-                    const btn = document.querySelector('button[data-id="agency"]');
-                    if (btn) btn.click();
-                }"""
-            )
 
-        if not options_loaded:
+        if not results_loaded:
             # تشخيص: نطبع معلومات تكشف السبب الحقيقي للفشل قبل ما نستسلم
             diag = await page.evaluate(
                 """() => ({
                     title: document.title,
                     url: location.href,
                     bodyLength: document.body ? document.body.innerText.length : 0,
-                    bodySnippet: document.body ? document.body.innerText.slice(0, 400) : '',
-                    hasAgencySelect: !!document.getElementById('agency'),
-                    hasAgencyButton: !!document.querySelector('button[data-id="agency"]'),
+                    bodySnippet: document.body ? document.body.innerText.slice(0, 500) : '',
+                    hasNoData: document.body ? document.body.textContent.includes('لا توجد بيانات') : false,
                     hasJQuery: typeof window.jQuery !== 'undefined',
                     webdriverFlag: navigator.webdriver
                 })"""
@@ -187,54 +195,24 @@ async def _try_fetch_once(attempt: int):
             print(f"عنوان الصفحة: {diag.get('title')}")
             print(f"الرابط الحالي: {diag.get('url')}")
             print(f"طول محتوى الصفحة: {diag.get('bodyLength')} حرف")
-            print(f"هل عنصر القائمة موجود؟ {diag.get('hasAgencySelect')}")
-            print(f"هل زر القائمة موجود؟ {diag.get('hasAgencyButton')}")
+            print(f"هل ظهرت رسالة 'لا توجد بيانات'؟ {diag.get('hasNoData')}")
             print(f"هل jQuery محمّلة؟ {diag.get('hasJQuery')}")
             print(f"علامة webdriver: {diag.get('webdriverFlag')}")
             print(f"مقتطف من الصفحة:\n{diag.get('bodySnippet')}")
             print("--------------------------------")
+
+            # لو الموقع صرّح أنه "لا توجد بيانات"، فهذه نتيجة صحيحة وليست فشلًا
+            if diag.get("hasNoData"):
+                await browser.close()
+                print("الموقع يقول: لا توجد منافسات مطابقة حاليًا.")
+                return []
+
             await browser.close()
             raise RuntimeError(
-                f"[محاولة {attempt}] قائمة الجهات الحكومية ما تحمّلت خلال 30 ثانية."
+                f"[محاولة {attempt}] لم تظهر أي نتائج خلال المهلة المحددة."
             )
 
-        # 3) تعيين القيم عبر JavaScript مباشرة (نفس الطريقة التي أثبتت نجاحها)
-        result = await page.evaluate(
-            """(agencyCode) => {
-                function setVal(id, val) {
-                    const el = document.getElementById(id);
-                    if (!el) return 'NOTFOUND';
-                    el.value = val;
-                    el.dispatchEvent(new Event('change', {bubbles:true}));
-                    if (window.jQuery && jQuery.fn.selectpicker) jQuery(el).selectpicker('refresh');
-                    return el.value;
-                }
-                const agency = setVal('agency', agencyCode);
-                const category = setVal('TenderCategory', '0'); // كل الحالات
-                const size = setVal('itemsPerPage', '24');
-                return {agency, category, size};
-            }""",
-            AGENCY_CODE,
-        )
-
-        if result.get("agency") != AGENCY_CODE:
-            await browser.close()
-            raise RuntimeError(
-                f"[محاولة {attempt}] فشل تعيين فلتر الجهة الحكومية رغم تحميل القائمة (agency={result.get('agency')})."
-            )
-
-        # 4) الضغط على زر البحث الفعلي
-        await page.evaluate(
-            """() => {
-                const btns = Array.from(document.querySelectorAll('button'))
-                    .filter(b => b.textContent.includes('بحث') && !b.textContent.includes('مسح'));
-                const submitBtn = btns.find(b => b.className.includes('btn-primary'));
-                if (submitBtn) submitBtn.click();
-            }"""
-        )
-        await page.wait_for_timeout(5000)
-
-        # 5) استخراج بطاقات المنافسات من الصفحة
+        # استخراج بطاقات المنافسات من الصفحة
         cards_text = await page.evaluate(
             """() => {
                 const all = Array.from(document.querySelectorAll('*'));
