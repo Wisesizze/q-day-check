@@ -19,6 +19,9 @@ on:
     - cron: "0 */6 * * *"   # كل 6 ساعات (بتوقيت UTC)
   workflow_dispatch: {}       # يسمح بتشغيله يدويًا من واجهة GitHub لتجربته
 
+permissions:
+  contents: write   # يسمح للمهمة بحفظ النتائج داخل المستودع
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
