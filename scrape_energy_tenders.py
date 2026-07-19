@@ -214,7 +214,7 @@ async def _try_fetch_once(attempt: int):
                 f"[محاولة {attempt}] لم تظهر أي نتائج خلال المهلة المحددة."
             )
 
-        # استخراج بطاقات المنافسات من الصفحة
+        # استخراج بطاقات المنافسات من الصفحة (النص + رابط التفاصيل)
         cards_text = await page.evaluate(
             """() => {
                 const all = Array.from(document.querySelectorAll('*'));
@@ -232,7 +232,20 @@ async def _try_fetch_once(attempt: int):
                     }
                     return cur;
                 }
-                return refLabelEls.map(el => findCard(el).innerText.replace(/\\s+/g, ' ').trim());
+                return refLabelEls.map(el => {
+                    const card = findCard(el);
+                    // نبحث عن رابط تفاصيل المنافسة داخل البطاقة
+                    const links = Array.from(card.querySelectorAll('a[href]'));
+                    const detail = links.find(a =>
+                        a.href.includes('DetailsForVisitor') ||
+                        a.href.includes('Details') ||
+                        a.textContent.trim() === 'التفاصيل'
+                    );
+                    return {
+                        text: card.innerText.replace(/\\s+/g, ' ').trim(),
+                        link: detail ? detail.href : ''
+                    };
+                });
             }"""
         )
 
@@ -254,8 +267,10 @@ async def fetch_active_tenders():
     raise last_error
 
 
-def extract_fields(text: str) -> dict:
-    """يستخرج الحقول المطلوبة من نص بطاقة منافسة واحدة عبر تعابير نمطية (regex)."""
+def extract_fields(card: dict) -> dict:
+    """يستخرج الحقول المطلوبة من بطاقة منافسة واحدة (نص + رابط) عبر تعابير نمطية (regex)."""
+    text = card.get("text", "") if isinstance(card, dict) else str(card)
+    link = card.get("link", "") if isinstance(card, dict) else ""
     pub_match = re.search(r"تاريخ النشر\s*:\s*([\d-]+)", text)
     ref_match = re.search(r"الرقم المرجعي\s*(\d+)", text)
     deadline_match = re.search(r"آخر موعد لتقديم العروض\s*([\d\- :]+)", text)
@@ -272,6 +287,7 @@ def extract_fields(text: str) -> dict:
         "publish_date": pub_match.group(1) if pub_match else "",
         "deadline": deadline_match.group(1).strip() if deadline_match else "",
         "ended": ended,
+        "link": link,
     }
 
 
@@ -299,9 +315,19 @@ def build_html(active_tenders: list, today_str: str) -> str:
             else:
                 badge_class, badge_text = "ok", f"{days} يومًا متبقية"
 
+            # لو توفر رابط التفاصيل، نجعل العنوان قابلاً للنقر ويفتح في تبويب جديد
+            link = t.get("link", "")
+            if link:
+                title_html = (
+                    f'<a class="card-title-link" href="{link}" target="_blank" '
+                    f'rel="noopener">{t["title"]}</a>'
+                )
+            else:
+                title_html = t["title"]
+
             cards.append(f"""
     <div class="card">
-      <p class="card-title">{t['title']}</p>
+      <p class="card-title">{title_html}</p>
       <div class="meta">
         <span>رقم المنافسة: <b>{t['reference_number']}</b></span>
         <span>الجهة: <b>{t['agency']}</b></span>
@@ -316,7 +342,7 @@ def build_html(active_tenders: list, today_str: str) -> str:
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>منافسات وزارة الطاقة - اعتماد</title>
+<title>Q Day Check — منافسات وزارة الطاقة</title>
 <style>
   :root {{ color-scheme: light; }}
   * {{ box-sizing: border-box; }}
@@ -326,7 +352,10 @@ def build_html(active_tenders: list, today_str: str) -> str:
   .updated {{ font-size: 13px; color: #667; background: #eef3f2; padding: 6px 12px; border-radius: 20px; }}
   .card-list {{ display: flex; flex-direction: column; gap: 12px; }}
   .card {{ background: #fff; border: 1px solid #e0e6e4; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }}
+  .subtitle {{ font-size: 14px; font-weight: 400; color: #5a7a72; }}
   .card-title {{ font-size: 16px; font-weight: 600; color: #0d3b44; margin: 0 0 8px 0; }}
+  .card-title-link {{ color: #0d3b44; text-decoration: none; border-bottom: 1px solid #b9d4cd; transition: color .15s, border-color .15s; }}
+  .card-title-link:hover {{ color: #12708a; border-bottom-color: #12708a; }}
   .meta {{ display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: #445; }}
   .meta span b {{ color: #1a2e2b; }}
   .badge {{ display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; margin-inline-start: 8px; }}
@@ -339,14 +368,15 @@ def build_html(active_tenders: list, today_str: str) -> str:
 </head>
 <body>
   <div class="header">
-    <h1>المنافسات المتاحة لوزارة الطاقة — منصة اعتماد</h1>
+    <h1>Q Day Check <span class="subtitle">— المنافسات المتاحة لوزارة الطاقة</span></h1>
     <div class="updated">آخر تحديث: {today_str}</div>
   </div>
   <div class="card-list">
     {cards_html}
   </div>
   <p class="footer-note">
-    يتم تحديث هذه الصفحة تلقائيًا كل ساعة عبر سكربت آلي يفحص منصة اعتماد (tenders.etimad.sa) ويستبعد المنافسات المنتهية.
+    تُحدَّث هذه الصفحة تلقائيًا كل 6 ساعات، وتستبعد المنافسات المنتهية. اضغط على اسم المنافسة لفتح تفاصيلها في اعتماد
+    (قد يُطلب منك تسجيل الدخول).
     المصدر: <a href="https://tenders.etimad.sa/Tender/AllTendersForVisitor" target="_blank">tenders.etimad.sa</a>
   </p>
 </body>
