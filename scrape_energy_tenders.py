@@ -65,6 +65,9 @@ OUTPUT_HTML = Path(__file__).parent / "energy-ministry-tenders.html"
 # نفس الصفحة باسم index.html حتى يفتحها رابط الموقع مباشرة (GitHub Pages)
 OUTPUT_INDEX = Path(__file__).parent / "index.html"
 
+# عدد التشغيلات المحفوظة في السجل التاريخي (شريط الحالة في الصفحة)
+MAX_HISTORY = 30
+
 # -------- إعدادات البروكسي (اختيارية) --------
 # ما تكتب بيانات البروكسي هنا أبدًا. السكربت يقرأها من متغيرات البيئة
 # (Environment Variables) اللي تُضبط في GitHub Secrets، أو تصدّرها محليًا
@@ -311,8 +314,52 @@ def load_previous_state() -> dict:
         return {}
 
 
-def build_html(active_tenders: list, today_str: str, health: dict = None) -> str:
+def build_history_strip(history: list) -> str:
+    """يبني شريط سجل التشغيلات (نمط صفحات الحالة): كل عمود = تشغيل واحد."""
+    if not history:
+        return ""
+
+    bars = []
+    # أعمدة رمادية فارغة على اليسار لو السجل أقصر من الحد الأقصى،
+    # حتى يبقى عرض الشريط ثابتًا ولا "يقفز" مع نمو السجل.
+    for _ in range(max(0, MAX_HISTORY - len(history))):
+        bars.append('<span class="bar bar-none" title="لا يوجد تشغيل"></span>')
+
+    for h in history:
+        ok = h.get("status") == "ok"
+        cls = "bar-ok" if ok else "bar-fail"
+        label = "نجح" if ok else "فشل"
+        when = h.get("timestamp", h.get("date", ""))
+        count = h.get("count", 0)
+        tip = f"{when} — {label} · {count} منافسة"
+        bars.append(f'<span class="bar {cls}" title="{tip}"></span>')
+
+    total = len(history)
+    ok_count = sum(1 for h in history if h.get("status") == "ok")
+    pct = round(ok_count / total * 100) if total else 0
+
+    return f"""
+  <div class="status-panel">
+    <div class="status-head">
+      <span class="status-title">سجل التشغيل</span>
+      <span class="status-pct">{ok_count} من {total} تشغيل ناجح ({pct}%)</span>
+    </div>
+    <div class="bars">{''.join(bars)}</div>
+    <div class="status-foot">
+      <span>الأقدم</span>
+      <span class="legend">
+        <i class="dot dot-ok"></i> ناجح
+        <i class="dot dot-fail"></i> فاشل
+      </span>
+      <span>الأحدث</span>
+    </div>
+  </div>"""
+
+
+def build_html(active_tenders: list, today_str: str, health: dict = None,
+               history: list = None) -> str:
     health = health or {}
+    history_html = build_history_strip(history or [])
     banner_html = ""
 
     if health.get("status") == "stale":
@@ -393,6 +440,26 @@ def build_html(active_tenders: list, today_str: str, health: dict = None) -> str
   .alert {{ background: #fff4e5; border: 1px solid #f0c48a; border-radius: 10px;
             padding: 14px 16px; margin-bottom: 16px; font-size: 14px; color: #7a4b0a; line-height: 1.7; }}
   .alert a {{ color: #7a4b0a; }}
+  .status-panel {{ background: #fff; border: 1px solid #e0e6e4; border-radius: 12px;
+                   padding: 14px 16px; margin-bottom: 16px; }}
+  .status-head {{ display: flex; justify-content: space-between; align-items: baseline;
+                  flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }}
+  .status-title {{ font-size: 14px; font-weight: 600; color: #0d3b44; }}
+  .status-pct {{ font-size: 12.5px; color: #5a7a72; }}
+  .bars {{ display: flex; gap: 3px; align-items: flex-end; direction: ltr; }}
+  .bar {{ flex: 1; min-width: 4px; height: 30px; border-radius: 2px; cursor: default;
+          transition: opacity .15s; }}
+  .bar:hover {{ opacity: .65; }}
+  .bar-ok {{ background: #3dc789; }}
+  .bar-fail {{ background: #e05c4b; }}
+  .bar-none {{ background: #e8edeb; }}
+  .status-foot {{ display: flex; justify-content: space-between; align-items: center;
+                  margin-top: 8px; font-size: 11.5px; color: #93a5a0; direction: ltr; }}
+  .legend {{ display: flex; align-items: center; gap: 10px; color: #5a7a72; direction: rtl; }}
+  .dot {{ display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+          margin-inline-end: 4px; vertical-align: middle; }}
+  .dot-ok {{ background: #3dc789; }}
+  .dot-fail {{ background: #e05c4b; }}
   @media (max-width: 600px) {{
     body {{ padding: 14px; }}
     h1 {{ font-size: 17px; }}
@@ -408,6 +475,7 @@ def build_html(active_tenders: list, today_str: str, health: dict = None) -> str
     <div class="updated">آخر تحديث: {today_str}</div>
   </div>
   {banner_html}
+  {history_html}
   <div class="card-list">
     {cards_html}
   </div>
@@ -433,6 +501,7 @@ async def main():
     previous_tenders = previous.get("tenders", [])
     previous_count = len(previous_tenders)
     last_successful = previous.get("last_successful_update", previous.get("updated", "غير معروف"))
+    history = previous.get("history", [])  # سجل التشغيلات السابقة (لشريط الحالة)
 
     raw_cards = await fetch_active_tenders()
     print(f"عدد البطاقات الخام المستخرجة: {len(raw_cards)}")
@@ -464,6 +533,15 @@ async def main():
     # (raw_cards > 0 لكن active == 0)، أما raw_cards == 0 فيعني أن الاستخراج نفسه فشل.
     suspicious = (len(raw_cards) == 0 and previous_count > 0)
 
+    # نُسجّل نتيجة هذا التشغيل في السجل التاريخي (يُعرض كشريط حالة في الصفحة)
+    history.append({
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "date": today_str,
+        "status": "fail" if suspicious else "ok",
+        "count": 0 if suspicious else len(active),
+    })
+    history = history[-MAX_HISTORY:]  # نحتفظ بآخر N تشغيل فقط
+
     if suspicious:
         print("=" * 60)
         print("!! كاشف الأعطال: نتيجة مريبة !!")
@@ -480,6 +558,7 @@ async def main():
             "last_successful_update": last_successful,
             "health": "stale",
             "health_note": "الاستخراج رجع صفر بطاقات بينما توجد بيانات سابقة",
+            "history": history,
             "tenders": previous_tenders,
         }
     else:
@@ -489,13 +568,14 @@ async def main():
             "updated": today_str,
             "last_successful_update": today_str,
             "health": "ok",
+            "history": history,
             "tenders": active,
         }
 
     OUTPUT_JSON.write_text(
         json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    html = build_html(display_tenders, state["last_successful_update"], health)
+    html = build_html(display_tenders, state["last_successful_update"], health, history)
     OUTPUT_HTML.write_text(html, encoding="utf-8")
     OUTPUT_INDEX.write_text(html, encoding="utf-8")  # نسخة للموقع العام
 
