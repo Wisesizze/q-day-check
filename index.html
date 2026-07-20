@@ -2,6 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Q Day Check — منافسات وزارة الطاقة</title>
 <style>
   :root { color-scheme: light; }
@@ -24,6 +25,16 @@
   .badge.ok { background: #dcf5e6; color: #1a7a44; }
   .empty { text-align: center; color: #667; padding: 40px 0; font-size: 15px; }
   .footer-note { margin-top: 20px; font-size: 12px; color: #889; }
+  .alert { background: #fff4e5; border: 1px solid #f0c48a; border-radius: 10px;
+            padding: 14px 16px; margin-bottom: 16px; font-size: 14px; color: #7a4b0a; line-height: 1.7; }
+  .alert a { color: #7a4b0a; }
+  @media (max-width: 600px) {
+    body { padding: 14px; }
+    h1 { font-size: 17px; }
+    .subtitle { display: block; margin-top: 4px; }
+    .meta { gap: 6px 12px; font-size: 12.5px; }
+    .header { align-items: flex-start; }
+  }
 </style>
 </head>
 <body>
@@ -31,6 +42,7 @@
     <h1>Q Day Check <span class="subtitle">— المنافسات المتاحة لوزارة الطاقة</span></h1>
     <div class="updated">آخر تحديث: 2026-07-20</div>
   </div>
+  
   <div class="card-list">
     
     <div class="card">
