@@ -2,15 +2,16 @@
 # داخل نفس مستودع GitHub اللي فيه scrape_energy_tenders.py و requirements.txt
 #
 # وظيفته: يشغّل السكربت تلقائيًا كل 6 ساعات على خوادم GitHub (مجانًا)
-# ويحفظ النتائج (energy-ministry-tenders.html) داخل المستودع نفسه.
+# ويحفظ النتائج (index.html) داخل المستودع نفسه، ثم تنشرها GitHub Pages.
 #
-# قبل ما يشتغل بنجاح، لازم تضيف 3 "Secrets" في إعدادات المستودع
-# (Settings > Secrets and variables > Actions > New repository secret):
-#   PROXY_SERVER    مثال: http://gate.dataimpulse.com:823
-#   PROXY_USERNAME   اسم المستخدم اللي أعطتك إياه DataImpulse
-#   PROXY_PASSWORD   كلمة المرور اللي أعطتك إياها DataImpulse
-# لو تركتها فاضية، السكربت يشتغل بدون بروكسي (وبيرجع يفشل بسبب حظر اعتماد
-# لعناوين GitHub، زي ما شفنا في أول تجربة).
+# كاشف الأعطال: لو رجع الاستخراج صفر بطاقات بينما توجد بيانات سابقة،
+# يخرج السكربت بحالة خطأ فتظهر علامة فشل حمراء ويرسل GitHub بريدًا تلقائيًا.
+# خطوة الحفظ تعمل دائمًا (if: always) حتى يصل تنبيه "البيانات قديمة" إلى الموقع.
+#
+# البروكسي اختياري ولم نعد نحتاجه (ثبت أن اعتماد لا يحجب GitHub).
+# لو احتجته يومًا، أضف هذي القيم في:
+# Settings > Secrets and variables > Actions:
+#   PROXY_SERVER / PROXY_USERNAME / PROXY_PASSWORD
 
 name: فحص منافسات وزارة الطاقة كل 6 ساعات
 
@@ -47,6 +48,7 @@ jobs:
         run: python scrape_energy_tenders.py
 
       - name: حفظ النتائج داخل المستودع
+        if: always()   # يعمل حتى لو فشل الفحص، حتى يصل تنبيه "البيانات قديمة" للموقع
         run: |
           git config user.name "auto-bot"
           git config user.email "auto-bot@users.noreply.github.com"
