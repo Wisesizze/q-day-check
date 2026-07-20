@@ -2,6 +2,14 @@
   "updated": "2026-07-20",
   "last_successful_update": "2026-07-20",
   "health": "ok",
+  "history": [
+    {
+      "timestamp": "2026-07-20 13:24",
+      "date": "2026-07-20",
+      "status": "ok",
+      "count": 5
+    }
+  ],
   "tenders": [
     {
       "title": "خدمات مركز عمليات الأمن السيبراني والانتهاك الأمني",
