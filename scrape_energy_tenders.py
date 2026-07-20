@@ -412,7 +412,7 @@ def build_html(active_tenders: list, today_str: str, health: dict = None) -> str
     {cards_html}
   </div>
   <p class="footer-note">
-    تُحدَّث هذه الصفحة تلقائيًا كل 6 ساعات، وتستبعد المنافسات المنتهية. اضغط على اسم المنافسة لفتح تفاصيلها في اعتماد
+    تُحدَّث هذه الصفحة تلقائيًا كل يوم صباحًا، وتستبعد المنافسات المنتهية. اضغط على اسم المنافسة لفتح تفاصيلها في اعتماد
     (قد يُطلب منك تسجيل الدخول).
     المصدر: <a href="https://tenders.etimad.sa/Tender/AllTendersForVisitor" target="_blank">tenders.etimad.sa</a>
   </p>
