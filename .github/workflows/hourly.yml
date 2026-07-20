@@ -1,7 +1,7 @@
 # هذا الملف لازم يُرفع داخل مجلد اسمه بالضبط: .github/workflows/
 # داخل نفس مستودع GitHub اللي فيه scrape_energy_tenders.py و requirements.txt
 #
-# وظيفته: يشغّل السكربت تلقائيًا كل 6 ساعات على خوادم GitHub (مجانًا)
+# وظيفته: يشغّل السكربت تلقائيًا مرة يوميًا على خوادم GitHub (مجانًا)
 # ويحفظ النتائج (index.html) داخل المستودع نفسه، ثم تنشرها GitHub Pages.
 #
 # كاشف الأعطال: لو رجع الاستخراج صفر بطاقات بينما توجد بيانات سابقة،
@@ -13,12 +13,12 @@
 # Settings > Secrets and variables > Actions:
 #   PROXY_SERVER / PROXY_USERNAME / PROXY_PASSWORD
 
-name: فحص منافسات وزارة الطاقة كل 6 ساعات
+name: فحص منافسات وزارة الطاقة يوميًا
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # كل 6 ساعات (بتوقيت UTC)
-  workflow_dispatch: {}       # يسمح بتشغيله يدويًا من واجهة GitHub لتجربته
+    - cron: "0 5 * * *"   # يوميًا 5 صباحًا UTC = 8 صباحًا بتوقيت السعودية
+  workflow_dispatch: {}     # يسمح بتشغيله يدويًا من واجهة GitHub لتجربته
 
 permissions:
   contents: write   # يسمح للمهمة بحفظ النتائج داخل المستودع
