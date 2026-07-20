@@ -24,6 +24,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 from datetime import datetime, date
 from pathlib import Path
 
@@ -299,7 +300,31 @@ def days_remaining(deadline_str: str, today: date) -> int:
         return -9999
 
 
-def build_html(active_tenders: list, today_str: str) -> str:
+def load_previous_state() -> dict:
+    """يقرأ نتيجة آخر تشغيل ناجح (إن وجدت) للمقارنة بها — أساس كاشف الأعطال."""
+    if not OUTPUT_JSON.exists():
+        return {}
+    try:
+        return json.loads(OUTPUT_JSON.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"تعذّرت قراءة الحالة السابقة: {e}")
+        return {}
+
+
+def build_html(active_tenders: list, today_str: str, health: dict = None) -> str:
+    health = health or {}
+    banner_html = ""
+
+    if health.get("status") == "stale":
+        last_ok = health.get("last_successful_update", "غير معروف")
+        banner_html = f"""
+  <div class="alert">
+    <b>⚠️ تعذّر تحديث البيانات في آخر محاولة.</b>
+    البيانات المعروضة أدناه من آخر تحديث ناجح بتاريخ <b>{last_ok}</b> وقد لا تكون دقيقة الآن.
+    السبب المرجّح: تغيّر في بنية موقع اعتماد. يُنصح بالتحقق يدويًا من
+    <a href="https://tenders.etimad.sa/Tender/AllTendersForVisitor" target="_blank">المنصة</a>.
+  </div>"""
+
     if not active_tenders:
         cards_html = """
         <div class="empty">لا توجد حالياً منافسات متاحة للتقديم لوزارة الطاقة في اعتماد.</div>
@@ -342,6 +367,7 @@ def build_html(active_tenders: list, today_str: str) -> str:
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Q Day Check — منافسات وزارة الطاقة</title>
 <style>
   :root {{ color-scheme: light; }}
@@ -364,6 +390,16 @@ def build_html(active_tenders: list, today_str: str) -> str:
   .badge.ok {{ background: #dcf5e6; color: #1a7a44; }}
   .empty {{ text-align: center; color: #667; padding: 40px 0; font-size: 15px; }}
   .footer-note {{ margin-top: 20px; font-size: 12px; color: #889; }}
+  .alert {{ background: #fff4e5; border: 1px solid #f0c48a; border-radius: 10px;
+            padding: 14px 16px; margin-bottom: 16px; font-size: 14px; color: #7a4b0a; line-height: 1.7; }}
+  .alert a {{ color: #7a4b0a; }}
+  @media (max-width: 600px) {{
+    body {{ padding: 14px; }}
+    h1 {{ font-size: 17px; }}
+    .subtitle {{ display: block; margin-top: 4px; }}
+    .meta {{ gap: 6px 12px; font-size: 12.5px; }}
+    .header {{ align-items: flex-start; }}
+  }}
 </style>
 </head>
 <body>
@@ -371,6 +407,7 @@ def build_html(active_tenders: list, today_str: str) -> str:
     <h1>Q Day Check <span class="subtitle">— المنافسات المتاحة لوزارة الطاقة</span></h1>
     <div class="updated">آخر تحديث: {today_str}</div>
   </div>
+  {banner_html}
   <div class="card-list">
     {cards_html}
   </div>
@@ -388,8 +425,27 @@ async def main():
     today = date.today()
     today_str = today.isoformat()
 
+    # ---------- كاشف الأعطال (Health Watchdog) ----------
+    # الفكرة: الفشل الصامت هو الخطر الأكبر. لو تغيّرت بنية موقع اعتماد،
+    # الاستخراج يرجع صفر نتائج، والصفحة تعرض "لا توجد منافسات" — وهذا لا يُفرَّق
+    # عن نتيجة فارغة حقيقية. فنقارن كل تشغيل بآخر تشغيل ناجح لكشف ذلك.
+    previous = load_previous_state()
+    previous_tenders = previous.get("tenders", [])
+    previous_count = len(previous_tenders)
+    last_successful = previous.get("last_successful_update", previous.get("updated", "غير معروف"))
+
     raw_cards = await fetch_active_tenders()
+    print(f"عدد البطاقات الخام المستخرجة: {len(raw_cards)}")
+
     all_tenders = [extract_fields(c) for c in raw_cards]
+
+    # فحص جودة الاستخراج: بطاقة صحيحة يجب أن تحتوي رقمًا مرجعيًا وموعدًا
+    well_formed = [t for t in all_tenders if t["reference_number"] and t["deadline"]]
+    if all_tenders and len(well_formed) < len(all_tenders) / 2:
+        print(
+            f"تحذير: {len(all_tenders) - len(well_formed)} من أصل {len(all_tenders)} "
+            "بطاقة لم تُستخرج حقولها بشكل صحيح — قد تكون صياغة الموقع تغيّرت."
+        )
 
     active = []
     for t in all_tenders:
@@ -402,15 +458,55 @@ async def main():
 
     active.sort(key=lambda t: t["deadline"])
 
+    # ---------- قرار الصحة ----------
+    # نعتبر النتيجة "مريبة" إذا لم نجد أي بطاقة خام إطلاقًا بينما كان لدينا
+    # بيانات سابقة. ملاحظة مهمة: انتهاء صلاحية كل المنافسات أمر طبيعي
+    # (raw_cards > 0 لكن active == 0)، أما raw_cards == 0 فيعني أن الاستخراج نفسه فشل.
+    suspicious = (len(raw_cards) == 0 and previous_count > 0)
+
+    if suspicious:
+        print("=" * 60)
+        print("!! كاشف الأعطال: نتيجة مريبة !!")
+        print(f"لم يُعثر على أي بطاقة، بينما آخر تشغيل ناجح وجد {previous_count} منافسة.")
+        print("الاحتمال الأرجح: تغيّرت بنية صفحات اعتماد أو صياغة 'الرقم المرجعي'.")
+        print("الإجراء: تم الإبقاء على آخر بيانات ناجحة وعرض تنبيه في الصفحة.")
+        print("=" * 60)
+
+        # لا نستبدل البيانات الجيدة ببيانات فارغة مشبوهة — نُبقيها ونضيف تنبيهًا
+        health = {"status": "stale", "last_successful_update": last_successful}
+        display_tenders = previous_tenders
+        state = {
+            "updated": today_str,
+            "last_successful_update": last_successful,
+            "health": "stale",
+            "health_note": "الاستخراج رجع صفر بطاقات بينما توجد بيانات سابقة",
+            "tenders": previous_tenders,
+        }
+    else:
+        health = {"status": "ok"}
+        display_tenders = active
+        state = {
+            "updated": today_str,
+            "last_successful_update": today_str,
+            "health": "ok",
+            "tenders": active,
+        }
+
     OUTPUT_JSON.write_text(
-        json.dumps({"updated": today_str, "tenders": active}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    html = build_html(active, today_str)
+    html = build_html(display_tenders, state["last_successful_update"], health)
     OUTPUT_HTML.write_text(html, encoding="utf-8")
     OUTPUT_INDEX.write_text(html, encoding="utf-8")  # نسخة للموقع العام
 
+    if suspicious:
+        # الخروج بخطأ يجعل GitHub يضع علامة فشل حمراء ويرسل لك بريدًا تلقائيًا
+        print("إنهاء بحالة خطأ لتنبيهك عبر بريد GitHub.")
+        sys.exit(1)
+
     print(f"تم العثور على {len(active)} منافسة متاحة لوزارة الطاقة بتاريخ {today_str}")
+    if previous_count and len(active) != previous_count:
+        print(f"(تغيّر العدد: {previous_count} ← {len(active)})")
 
 
 if __name__ == "__main__":
