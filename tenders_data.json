@@ -1,6 +1,6 @@
 {
-  "updated": "2026-07-20",
-  "last_successful_update": "2026-07-20",
+  "updated": "2026-07-21",
+  "last_successful_update": "2026-07-21",
   "health": "ok",
   "history": [
     {
@@ -8,58 +8,69 @@
       "date": "2026-07-20",
       "status": "ok",
       "count": 5
+    },
+    {
+      "timestamp": "2026-07-21 06:29",
+      "date": "2026-07-21",
+      "status": "ok",
+      "count": 5
     }
   ],
   "tenders": [
     {
       "title": "خدمات مركز عمليات الأمن السيبراني والانتهاك الأمني",
+      "tender_number": "2026000318",
       "reference_number": "260639007392",
       "agency": "وزارة الطاقة - شعبة المشتريات - الرياض",
       "publish_date": "2026-06-25",
       "deadline": "2026-07-26 16:00",
       "ended": false,
       "link": "https://tenders.etimad.sa/Tender/DetailsForVisitor?STenderId=HGdsaGfBGFdSlXDbYN2oiQ==",
-      "days_remaining": 6
+      "days_remaining": 5
     },
     {
       "title": "تجديد وتطوير التراخيص والدعم الفني لمركز الأزمات لعام 2026",
+      "tender_number": "2026000281",
       "reference_number": "260539003728",
       "agency": "وزارة الطاقة - شعبة المشتريات - الرياض",
       "publish_date": "2026-06-07",
       "deadline": "2026-07-26 16:00",
       "ended": false,
       "link": "https://tenders.etimad.sa/Tender/DetailsForVisitor?STenderId=SGtikb%20PCtdUmegOUk0x%20Q==",
-      "days_remaining": 6
+      "days_remaining": 5
     },
     {
       "title": "توريد وتركيب منصة التهديدات الاستباقية",
+      "tender_number": "2026000218",
       "reference_number": "260439013671",
       "agency": "وزارة الطاقة - شعبة المشتريات - الرياض",
       "publish_date": "2026-06-10",
       "deadline": "2026-07-30 16:00",
       "ended": false,
       "link": "https://tenders.etimad.sa/Tender/DetailsForVisitor?STenderId=wkgl%20uAZtylqITdzS*@@**2N2Q==",
-      "days_remaining": 10
+      "days_remaining": 9
     },
     {
       "title": "تقديم خدمات إدارة المخاطر السيبرانية (المرحلة الثانية)",
+      "tender_number": "2026000180",
       "reference_number": "260439012701",
       "agency": "وزارة الطاقة - شعبة المشتريات - الرياض",
       "publish_date": "2026-06-10",
       "deadline": "2026-07-30 16:00",
       "ended": false,
       "link": "https://tenders.etimad.sa/Tender/DetailsForVisitor?STenderId=4iyyuPeV6NLZeD0Zlu3f9w==",
-      "days_remaining": 10
+      "days_remaining": 9
     },
     {
       "title": "رخص خدمات الأمن السيبراني",
+      "tender_number": "2026000397",
       "reference_number": "260739000876",
       "agency": "وزارة الطاقة - شعبة المشتريات - الرياض",
       "publish_date": "2026-07-05",
       "deadline": "2026-08-05 15:00",
       "ended": false,
       "link": "https://tenders.etimad.sa/Tender/DetailsForVisitor?STenderId=4YyLG2WTmvjStJ3vNti*@@**FQ==",
-      "days_remaining": 16
+      "days_remaining": 15
     }
   ]
 }
