@@ -253,6 +253,31 @@ async def _try_fetch_once(attempt: int):
             }"""
         )
 
+        # صفحة القائمة تعرض "الرقم المرجعي" فقط، بينما "رقم المنافسة" موجود
+        # في صفحة التفاصيل وحدها. نزور كل صفحة تفاصيل لجلبه (متاح بدون تسجيل دخول).
+        detail_page = await context.new_page()
+        for i, card in enumerate(cards_text, 1):
+            link = card.get("link", "")
+            card["tender_number"] = ""
+            if not link:
+                continue
+            try:
+                await detail_page.goto(link, wait_until="domcontentloaded", timeout=45000)
+                await detail_page.wait_for_timeout(2500)
+                num = await detail_page.evaluate(
+                    r"""() => {
+                        const m = document.body.innerText.match(/رقم المنافسة\s*:?\s*(\d+)/);
+                        return m ? m[1] : '';
+                    }"""
+                )
+                card["tender_number"] = num or ""
+                print(f"  [{i}/{len(cards_text)}] رقم المنافسة: {num or '—'}")
+            except Exception as e:
+                # فشل صفحة تفاصيل واحدة لا يُسقط التشغيل كله؛
+                # نكمل بالرقم المرجعي وحده لهذه المنافسة.
+                print(f"  [{i}] تعذّر جلب رقم المنافسة: {e}")
+        await detail_page.close()
+
         await browser.close()
         return cards_text
 
@@ -275,6 +300,7 @@ def extract_fields(card: dict) -> dict:
     """يستخرج الحقول المطلوبة من بطاقة منافسة واحدة (نص + رابط) عبر تعابير نمطية (regex)."""
     text = card.get("text", "") if isinstance(card, dict) else str(card)
     link = card.get("link", "") if isinstance(card, dict) else ""
+    tender_number = card.get("tender_number", "") if isinstance(card, dict) else ""
     pub_match = re.search(r"تاريخ النشر\s*:\s*([\d-]+)", text)
     ref_match = re.search(r"الرقم المرجعي\s*(\d+)", text)
     deadline_match = re.search(r"آخر موعد لتقديم العروض\s*([\d\- :]+)", text)
@@ -286,7 +312,8 @@ def extract_fields(card: dict) -> dict:
 
     return {
         "title": title_match.group(1).strip() if title_match else "",
-        "reference_number": ref_match.group(1) if ref_match else "",
+        "tender_number": tender_number,          # رقم المنافسة (من صفحة التفاصيل)
+        "reference_number": ref_match.group(1) if ref_match else "",  # الرقم المرجعي
         "agency": "وزارة الطاقة - شعبة المشتريات - الرياض",
         "publish_date": pub_match.group(1) if pub_match else "",
         "deadline": deadline_match.group(1).strip() if deadline_match else "",
@@ -397,11 +424,19 @@ def build_html(active_tenders: list, today_str: str, health: dict = None,
             else:
                 title_html = t["title"]
 
+            # اعتماد يعرض رقمين مختلفين لكل منافسة؛ نعرضهما بتسميتهما الصحيحة.
+            # "رقم المنافسة" يأتي من صفحة التفاصيل، فقد لا يتوفر أحيانًا.
+            tender_no = t.get("tender_number", "")
+            tender_no_html = (
+                f"<span>رقم المنافسة: <b>{tender_no}</b></span>" if tender_no else ""
+            )
+
             cards.append(f"""
     <div class="card">
       <p class="card-title">{title_html}</p>
       <div class="meta">
-        <span>رقم المنافسة: <b>{t['reference_number']}</b></span>
+        {tender_no_html}
+        <span>الرقم المرجعي: <b>{t['reference_number']}</b></span>
         <span>الجهة: <b>{t['agency']}</b></span>
         <span>تاريخ النشر: <b>{t['publish_date']}</b></span>
         <span>آخر موعد للتقديم: <b>{t['deadline']}</b></span>
